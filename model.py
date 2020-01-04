@@ -3,6 +3,7 @@ from tensorflow.contrib import rnn
 from tensorflow.contrib import legacy_seq2seq
 import random
 import numpy as np
+from DeviceCellWrapper import DeviceCellWrapper
 
 from beam import BeamSearch
 
@@ -23,8 +24,12 @@ class Model():
             raise Exception("model type not supported: {}".format(args.model))
 
         cells = []
-        for _ in range(args.num_layers):
-            cell = cell_fn(args.rnn_size)
+        for layer_indx in range(0, args.num_layers):
+            device = layer_indx % 8
+            cell = \
+            cell_fn(args.rnn_size)
+            #DeviceCellWrapper(cell_fn(args.rnn_size), "/gpu:"+str(device)) 
+            # 
             cells.append(cell)
 
         self.cell = cell = rnn.MultiRNNCell(cells)
@@ -55,16 +60,16 @@ class Model():
             variable_summaries(softmax_w)
             softmax_b = tf.get_variable("softmax_b", [args.vocab_size])
             variable_summaries(softmax_b)
-            with tf.device("/cpu:0"):
-                embedding = tf.get_variable("embedding", [args.vocab_size, args.rnn_size])
-                inputs = tf.split(tf.nn.embedding_lookup(embedding, self.input_data), args.seq_length, 1)
-                inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
+            #fareed commented this with tf.device("/cpu:0"):
+            embedding = tf.get_variable("embedding", [args.vocab_size, args.rnn_size])
+            inputs = tf.split(tf.nn.embedding_lookup(embedding, self.input_data), args.seq_length, 1)
+            inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
 
         def loop(prev, _):
             prev = tf.matmul(prev, softmax_w) + softmax_b
             prev_symbol = tf.stop_gradient(tf.argmax(prev, 1))
             return tf.nn.embedding_lookup(embedding, prev_symbol)
-
+                
         outputs, last_state = legacy_seq2seq.rnn_decoder(inputs, self.initial_state, cell, loop_function=loop if infer else None, scope='rnnlm')
         output = tf.reshape(tf.concat(outputs, 1), [-1, args.rnn_size])
         self.logits = tf.matmul(output, softmax_w) + softmax_b
